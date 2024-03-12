@@ -13,10 +13,10 @@ build_runtime:
 build_writer:
     {{cxx}} {{cxx_flags}} runtime.cpp writer.cpp -o /tmp/writer
 
-build_main:
-    {{cxx}} {{cxx_flags}} main.cpp -o /tmp/main
+build_engine:
+    {{cxx}} {{cxx_flags}} engine.cpp -o /tmp/engine
 
-build: build_runtime build_writer build_main
+build: build_runtime build_writer build_engine
 
 run_writer:
     /tmp/writer
@@ -24,7 +24,7 @@ run_writer:
 run_readelf:
     readelf -a /tmp/test.so
 
-run_main:
-    LD_LIBRARY_PATH={{cwd}} /tmp/main
+run_engine:
+    LD_LIBRARY_PATH={{cwd}} /tmp/engine /tmp/runtime.so
 
-run: run_writer run_readelf
+run: run_writer run_engine run_readelf
