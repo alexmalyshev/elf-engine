@@ -1,3 +1,5 @@
+#include "runtime.h"
+
 #include <dlfcn.h>
 
 #include <cassert>
@@ -19,7 +21,7 @@ size_t collatzConjecture(uint64_t (*collatzStep)(uint64_t), uint64_t n) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+int main_runtime(int argc, char** argv) {
   if (argc != 2) {
     std::println(
       stderr,
@@ -48,6 +50,40 @@ int main(int argc, char** argv) {
     "Collatz Conjecture for {} resolves in {} steps",
     n,
     collatzConjecture(collatzStep, n)
+  );
+
+  return 0;
+}
+
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::println(
+      stderr,
+      "Error: Takes exactly one argument (the shared object)"
+    );
+    return 1;
+  }
+
+  auto bundlePath = argv[1];
+  auto handle = dlopen(bundlePath, RTLD_LOCAL | RTLD_NOW);
+  if (handle == nullptr) {
+    std::println(stderr, "Failed to open {}", bundlePath);
+    return 1;
+  }
+
+  constexpr auto funcName = "collatz_conjecture";
+  auto symbol = dlsym(handle, funcName);
+  if (symbol == nullptr) {
+    std::println(stderr, "Failed to read function '{}'", funcName);
+    return 1;
+  }
+
+  auto collatzConjecture = reinterpret_cast<size_t(*)(uint64_t)>(symbol);
+  uint64_t n = 1457;
+  std::println(
+    "Collatz Conjecture for {} resolves in {} steps",
+    n,
+    collatzConjecture(n)
   );
 
   return 0;

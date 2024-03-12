@@ -19,12 +19,12 @@ build_engine:
 build: build_runtime build_writer build_engine
 
 run_writer:
-    /tmp/writer
-
-run_readelf:
-    readelf -a /tmp/test.so
+    /tmp/writer /tmp/bundle.so
 
 run_engine:
     LD_LIBRARY_PATH={{cwd}} /tmp/engine /tmp/runtime.so
 
-run: run_writer run_engine run_readelf
+check_bundle:
+    readelf -a /tmp/bundle.so
+
+run: run_writer run_engine
