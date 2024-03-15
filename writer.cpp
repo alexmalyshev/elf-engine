@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cassert>
+#include <filesystem>
 #include <fstream>
 #include <print>
 #include <vector>
@@ -37,6 +38,7 @@ constexpr uint32_t raw(SectionIdx idx) {
 // Note: These are pulled out of thin air.
 constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
+constexpr size_t kTextAlign = 0x1000;
 constexpr size_t kDynsymStart = 0x2000000;
 constexpr size_t kDynstrStart = 0x3000000;
 
@@ -200,7 +202,7 @@ void initSegments(
   text.p_vaddr = kTextStart;
   text.p_filesz = kTextSize;
   text.p_memsz = kTextSize;
-  text.p_align = 0x1000;
+  text.p_align = kTextAlign;
   segmentOffset += text.p_filesz;
 
   // Readable segment for .dynsym and .dynstr
@@ -232,8 +234,8 @@ void initSections(
   text.sh_addr = header.getSegmentHeader(SegmentIdx::Text).p_vaddr;
   text.sh_offset = sectionOffset;
   text.sh_size = kTextSize;
-  text.sh_addralign = 0x1000;
-  assert((text.sh_addr % text.sh_addralign) == 0);
+  text.sh_addralign = kTextAlign;
+  assert(text.sh_addralign == 0 || (text.sh_addr % text.sh_addralign) == 0);
   sectionOffset += text.sh_size;
 
   // .dynsym
@@ -343,6 +345,12 @@ int main(int argc, char** argv) {
   write(out, symbolNames.start(), symbolNames.size());
   // .shstrtab
   write(out, sectionNames.start(), sectionNames.size());
+
+  std::filesystem::permissions(
+    outPath,
+    std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec | std::filesystem::perms::others_exec,
+    std::filesystem::perm_options::add
+  );
 
   return 0;
 }
