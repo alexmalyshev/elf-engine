@@ -9,23 +9,36 @@
 
 namespace {
 
-constexpr size_t kTextSegmentIdx = 0;
-constexpr size_t kDynamicSymbolSegmentIdx = 1;
-constexpr size_t kNumSegments = 2;
+enum class SegmentIdx : uint32_t {
+  Text,
+  Dynsym,
+  Total,
+};
 
-// Section 0 is the null section which is zeroed out.
-constexpr size_t kTextSectionHeaderIdx = 1;
-constexpr size_t kDynamicSymbolSectionHeaderIdx = 2;
-constexpr size_t kSymbolSectionHeaderIdx = 3;
-constexpr size_t kSymbolStringSectionHeaderIdx = 4;
-constexpr size_t kSectionStringSectionHeaderIdx = 5;
-constexpr size_t kNumSections = 6;
+enum class SectionIdx : uint32_t {
+  Null,
+  Text,
+  Dynsym,
+  Dynstr,
+  Symtab,
+  Strtab,
+  Shstrtab,
+  Total,
+};
+
+constexpr uint32_t raw(SegmentIdx idx) {
+  return static_cast<uint32_t>(idx);
+}
+
+constexpr uint32_t raw(SectionIdx idx) {
+  return static_cast<uint32_t>(idx);
+}
 
 // Note: These are pulled out of thin air.
 constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
-
 constexpr size_t kDynsymStart = 0x2000000;
+constexpr size_t kDynstrStart = 0x3000000;
 
 extern "C" size_t collatz_conjecture(uint64_t n) {
   auto fn = functionTable[0];
@@ -41,9 +54,17 @@ extern "C" size_t collatz_conjecture(uint64_t n) {
 }
 
 struct ElfHeader {
+  Elf64_Phdr& getSegmentHeader(SegmentIdx idx) {
+    return progHeaders[raw(idx)];
+  }
+
+  Elf64_Shdr& getSectionHeader(SectionIdx idx) {
+    return sectHeaders[raw(idx)];
+  }
+
   Elf64_Ehdr fileHeader;
-  std::array<Elf64_Phdr, kNumSegments> progHeaders;
-  std::array<Elf64_Shdr, kNumSections> sectHeaders;
+  std::array<Elf64_Phdr, raw(SegmentIdx::Total)> progHeaders;
+  std::array<Elf64_Shdr, raw(SectionIdx::Total)> sectHeaders;
 };
 
 // String table encoded for ELF.
@@ -109,7 +130,7 @@ void initSymbols(ElfSymbolTable& symbols, ElfStringTable& symbolNames) {
   memset(&sym, 0, sizeof(sym));
   sym.st_name = symbolNames.insert("collatz_conjecture");
   sym.st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
-  sym.st_shndx = kTextSectionHeaderIdx;
+  sym.st_shndx = raw(SectionIdx::Text);
   sym.st_value = kTextStart;
   sym.st_size = kTextSize;
 
@@ -138,10 +159,10 @@ void initFileHeader(Elf64_Ehdr& header) {
   header.e_shoff = offsetof(ElfHeader, sectHeaders);
   header.e_ehsize = sizeof(header);
   header.e_phentsize = sizeof(Elf64_Phdr);
-  header.e_phnum = kNumSegments;
+  header.e_phnum = raw(SegmentIdx::Total);
   header.e_shentsize = sizeof(Elf64_Shdr);
-  header.e_shnum = kNumSections;
-  header.e_shstrndx = kSectionStringSectionHeaderIdx;
+  header.e_shnum = raw(SectionIdx::Total);
+  header.e_shstrndx = raw(SectionIdx::Shstrtab);
 }
 
 void initProgramHeader(Elf64_Phdr& header) {
@@ -162,11 +183,17 @@ void initHeader(ElfHeader& header) {
   }
 }
 
-void initSegments(ElfHeader& header, const ElfSymbolTable& symbols) {
+void initSegments(
+  ElfHeader& header,
+  const ElfSymbolTable& symbols,
+  const ElfStringTable& symbolNames
+) {
   // Segments start right after the header table.
   uint32_t segmentOffset = sizeof(ElfHeader);
 
-  auto& text = header.progHeaders[kTextSegmentIdx];
+  // Readable and executable segment for .text
+
+  auto& text = header.getSegmentHeader(SegmentIdx::Text);
   text.p_type = PT_LOAD;
   text.p_flags = PF_R | PF_X;
   text.p_offset = segmentOffset;
@@ -176,13 +203,15 @@ void initSegments(ElfHeader& header, const ElfSymbolTable& symbols) {
   text.p_align = 0x1000;
   segmentOffset += text.p_filesz;
 
-  auto& dynsym = header.progHeaders[kDynamicSymbolSegmentIdx];
-  dynsym.p_type = PT_LOAD; // TODO: Is this correct?
+  // Readable segment for .dynsym and .dynstr
+
+  auto& dynsym = header.getSegmentHeader(SegmentIdx::Dynsym);
+  dynsym.p_type = PT_LOAD;
   dynsym.p_flags = PF_R;
   dynsym.p_offset = segmentOffset;
   dynsym.p_vaddr = kDynsymStart;
-  dynsym.p_filesz = symbols.size();
-  dynsym.p_memsz = symbols.size();
+  dynsym.p_filesz = symbols.size() + symbolNames.size();
+  dynsym.p_memsz = dynsym.p_filesz;
   segmentOffset += dynsym.p_filesz;
 }
 
@@ -196,11 +225,11 @@ void initSections(
 
   // .text
 
-  auto& text = header.sectHeaders[kTextSectionHeaderIdx];
+  auto& text = header.getSectionHeader(SectionIdx::Text);
   text.sh_name = sectionNames.insert(".text");
   text.sh_type = SHT_PROGBITS;
   text.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-  text.sh_addr = header.progHeaders[kTextSegmentIdx].p_vaddr;
+  text.sh_addr = header.getSegmentHeader(SegmentIdx::Text).p_vaddr;
   text.sh_offset = sectionOffset;
   text.sh_size = kTextSize;
   text.sh_addralign = 0x1000;
@@ -209,28 +238,38 @@ void initSections(
 
   // .dynsym
 
-  auto& dynsym = header.sectHeaders[kDynamicSymbolSectionHeaderIdx];
+  auto& dynsym = header.getSectionHeader(SectionIdx::Dynsym);
   dynsym.sh_name = sectionNames.insert(".dynsym");
   dynsym.sh_type = SHT_DYNSYM;
   dynsym.sh_flags = SHF_ALLOC | SHF_INFO_LINK;
-  dynsym.sh_addr = header.progHeaders[kDynamicSymbolSegmentIdx].p_vaddr;
+  dynsym.sh_addr = header.getSegmentHeader(SegmentIdx::Dynsym).p_vaddr;
   dynsym.sh_offset = sectionOffset;
   dynsym.sh_size = symbols.size();
-  dynsym.sh_link = kSymbolStringSectionHeaderIdx;
+  dynsym.sh_link = raw(SectionIdx::Dynstr);
   // Index of the first non-null symbol.
   dynsym.sh_info = 1;
   dynsym.sh_entsize = sizeof(Elf64_Sym);
   sectionOffset += dynsym.sh_size;
 
+  // .dynstr
+  auto& dynstr = header.getSectionHeader(SectionIdx::Dynstr);
+  dynstr.sh_name = sectionNames.insert(".dynstr");
+  dynstr.sh_type = SHT_STRTAB;
+  dynstr.sh_flags = SHF_ALLOC; // TODO: Should this have SHF_STRINGS?
+  dynstr.sh_addr = kDynstrStart;
+  dynstr.sh_offset = sectionOffset;
+  dynstr.sh_size = symbolNames.size();
+  sectionOffset += dynstr.sh_size;
+
   // .symtab
 
-  auto& symtab = header.sectHeaders[kSymbolSectionHeaderIdx];
+  auto& symtab = header.getSectionHeader(SectionIdx::Symtab);
   symtab.sh_name = sectionNames.insert(".symtab");
   symtab.sh_type = SHT_SYMTAB;
   symtab.sh_flags = SHF_INFO_LINK;
   symtab.sh_offset = sectionOffset;
   symtab.sh_size = symbols.size();
-  symtab.sh_link = kSymbolStringSectionHeaderIdx;
+  symtab.sh_link = raw(SectionIdx::Strtab);
   // Index of the first non-null symbol.
   symtab.sh_info = 1;
   symtab.sh_entsize = sizeof(Elf64_Sym);
@@ -238,7 +277,7 @@ void initSections(
 
   // .strtab
 
-  auto& strtab = header.sectHeaders[kSymbolStringSectionHeaderIdx];
+  auto& strtab = header.getSectionHeader(SectionIdx::Strtab);
   strtab.sh_name = sectionNames.insert(".strtab");
   strtab.sh_type = SHT_STRTAB;
   strtab.sh_flags = SHF_STRINGS;
@@ -248,7 +287,7 @@ void initSections(
 
   // .shstrtab
 
-  auto& shstrtab = header.sectHeaders[kSectionStringSectionHeaderIdx];
+  auto& shstrtab = header.getSectionHeader(SectionIdx::Shstrtab);
   shstrtab.sh_name = sectionNames.insert(".shstrtab");
   shstrtab.sh_type = SHT_STRTAB;
   shstrtab.sh_flags = SHF_STRINGS;
@@ -282,7 +321,7 @@ int main(int argc, char** argv) {
 
   ElfHeader header;
   initHeader(header);
-  initSegments(header, symbols);
+  initSegments(header, symbols, symbolNames);
 
   ElfStringTable sectionNames;
   initSections(header, symbols, symbolNames, sectionNames);
@@ -296,6 +335,8 @@ int main(int argc, char** argv) {
   write(out, collatz_conjecture, kTextSize);
   // .dynsym
   write(out, symbols.start(), symbols.size());
+  // .dynstr
+  write(out, symbolNames.start(), symbolNames.size());
   // .symtab
   write(out, symbols.start(), symbols.size());
   // .strtab
