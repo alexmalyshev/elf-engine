@@ -65,16 +65,28 @@ int main(int argc, char** argv) {
   }
 
   auto bundlePath = argv[1];
+  dlerror();
   auto handle = dlopen(bundlePath, RTLD_LOCAL | RTLD_NOW);
   if (handle == nullptr) {
-    std::println(stderr, "Failed to open {}", bundlePath);
+    std::println(
+      stderr,
+      "Error: Failed to open {}\n\n{}\n",
+      bundlePath,
+      dlerror()
+    );
     return 1;
   }
 
   constexpr auto funcName = "collatz_conjecture";
+  dlerror();
   auto symbol = dlsym(handle, funcName);
   if (symbol == nullptr) {
-    std::println(stderr, "Failed to read function '{}'", funcName);
+    std::println(
+      stderr,
+      "Error: Failed to read function '{}'\n\n{}\n",
+      funcName,
+      dlerror()
+    );
     return 1;
   }
 
