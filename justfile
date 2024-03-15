@@ -22,7 +22,7 @@ run_writer:
     /tmp/writer /tmp/bundle.so
 
 run_engine:
-    LD_LIBRARY_PATH={{cwd}} /tmp/engine /tmp/runtime.so
+    LD_LIBRARY_PATH={{cwd}} /tmp/engine /tmp/bundle.so
 
 check_bundle:
     readelf -a /tmp/bundle.so
