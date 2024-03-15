@@ -3,7 +3,7 @@ cwd := `pwd`
 cc := `which clang`
 cxx := `which clang++`
 
-cxx_flags := '-stdlib=libc++ -std=c++23 -pedantic -Wall -Wextra'
+cxx_flags := '-stdlib=libc++ -std=c++23 -pedantic -g -Wall -Wextra'
 
 default: build run
 
