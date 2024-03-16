@@ -246,7 +246,7 @@ struct ElfObject {
     auto& dynsym = headers.getSectionHeader(SectionIdx::Dynsym);
     dynsym.sh_name = sectionNames.insert(".dynsym");
     dynsym.sh_type = SHT_DYNSYM;
-    dynsym.sh_flags = SHF_ALLOC | SHF_INFO_LINK;
+    dynsym.sh_flags = SHF_ALLOC;
     dynsym.sh_addr = headers.getSegmentHeader(SegmentIdx::Dynsym).p_vaddr;
     dynsym.sh_offset = sectionOffset;
     dynsym.sh_size = symbols.size_bytes();
@@ -271,7 +271,6 @@ struct ElfObject {
     auto& symtab = headers.getSectionHeader(SectionIdx::Symtab);
     symtab.sh_name = sectionNames.insert(".symtab");
     symtab.sh_type = SHT_SYMTAB;
-    symtab.sh_flags = SHF_INFO_LINK;
     symtab.sh_offset = sectionOffset;
     symtab.sh_size = symbols.size_bytes();
     symtab.sh_link = raw(SectionIdx::Strtab);
@@ -285,7 +284,6 @@ struct ElfObject {
     auto& strtab = headers.getSectionHeader(SectionIdx::Strtab);
     strtab.sh_name = sectionNames.insert(".strtab");
     strtab.sh_type = SHT_STRTAB;
-    strtab.sh_flags = SHF_STRINGS;
     strtab.sh_offset = sectionOffset;
     strtab.sh_size = symbolNames.size_bytes();
     sectionOffset += strtab.sh_size;
@@ -295,7 +293,6 @@ struct ElfObject {
     auto& shstrtab = headers.getSectionHeader(SectionIdx::Shstrtab);
     shstrtab.sh_name = sectionNames.insert(".shstrtab");
     shstrtab.sh_type = SHT_STRTAB;
-    shstrtab.sh_flags = SHF_STRINGS;
     shstrtab.sh_offset = sectionOffset;
     shstrtab.sh_size = sectionNames.size_bytes();
     sectionOffset += shstrtab.sh_size;
