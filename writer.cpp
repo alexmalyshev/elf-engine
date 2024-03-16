@@ -79,14 +79,14 @@ class ElfStringTable {
 
   // Insert a string into the symbol table, return its offset.
   uint32_t insert(std::string_view s) {
-    size_t startOffset = bytes_.size();
-    // TODO: Assert startOffset fits in 32-bits.
+    auto startOffset = static_cast<uint32_t>(bytes_.size());
+    assert(size_t{startOffset} == bytes_.size());
 
     // Strings are always encoded with a NUL terminator.
     bytes_.resize(bytes_.size() + s.size() + 1);
     std::memcpy(&bytes_[startOffset], s.data(), s.size());
 
-    return static_cast<uint32_t>(startOffset);
+    return startOffset;
   }
 
   constexpr const uint8_t* start() const {
