@@ -41,7 +41,6 @@ constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
 constexpr size_t kTextAlign = 0x1000;
 constexpr size_t kDynsymStart = 0x2000000;
-constexpr size_t kDynstrStart = 0x3000000;
 
 extern "C" size_t collatz_conjecture(uint64_t n) {
   auto fn = functionTable[0];
@@ -262,7 +261,7 @@ struct ElfObject {
     dynstr.sh_name = sectionNames.insert(".dynstr");
     dynstr.sh_type = SHT_STRTAB;
     dynstr.sh_flags = SHF_ALLOC; // TODO: Should this have SHF_STRINGS?
-    dynstr.sh_addr = kDynstrStart;
+    dynstr.sh_addr = dynsym.sh_addr + dynsym.sh_size;
     dynstr.sh_offset = sectionOffset;
     dynstr.sh_size = symbolNames.size_bytes();
     sectionOffset += dynstr.sh_size;
