@@ -1,30 +1,36 @@
-cwd := `pwd`
-
 cc := `which clang`
 cxx := `which clang++`
 
 cxx_flags := '-stdlib=libc++ -std=c++23 -pedantic -g -Wall -Wextra'
 
+bundle := '/tmp/bundle.so'
+runtime := '/tmp/runtime.so'
+writer := '/tmp/writer'
+engine := '/tmp/engine'
+
 default: build run
 
 build_runtime:
-    {{cxx}} {{cxx_flags}} -fPIC -shared runtime.cpp -o /tmp/runtime.so
+    {{cxx}} {{cxx_flags}} -fPIC -shared runtime.cpp -o {{runtime}}
 
 build_writer:
-    {{cxx}} {{cxx_flags}} runtime.cpp writer.cpp -o /tmp/writer
+    {{cxx}} {{cxx_flags}} runtime.cpp writer.cpp -o {{writer}}
 
 build_engine:
-    {{cxx}} {{cxx_flags}} engine.cpp -o /tmp/engine
+    {{cxx}} {{cxx_flags}} engine.cpp -o {{engine}}
 
 build: build_runtime build_writer build_engine
 
 run_writer:
-    /tmp/writer /tmp/bundle.so
+    {{writer}} {{bundle}}
 
 run_engine:
-    LD_LIBRARY_PATH={{cwd}} /tmp/engine /tmp/bundle.so
+    {{engine}} {{bundle}}
 
 check_bundle:
-    readelf -a /tmp/bundle.so
+    readelf -a {{bundle}}
+
+clean:
+    rm {{bundle}} {{runtime}} {{writer}} {{engine}} || true
 
 run: run_writer run_engine
