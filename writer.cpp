@@ -164,9 +164,9 @@ struct ElfHeaders {
     fileHeader.e_shoff = offsetof(ElfHeaders, sectionHeaders);
     fileHeader.e_ehsize = sizeof(fileHeader);
     fileHeader.e_phentsize = sizeof(Elf64_Phdr);
-    fileHeader.e_phnum = raw(SegmentIdx::Total);
+    fileHeader.e_phnum = segmentHeaders.size();
     fileHeader.e_shentsize = sizeof(Elf64_Shdr);
-    fileHeader.e_shnum = raw(SectionIdx::Total);
+    fileHeader.e_shnum = sectionHeaders.size();
     fileHeader.e_shstrndx = raw(SectionIdx::Shstrtab);
   }
 };
