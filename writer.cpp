@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <print>
+#include <span>
 #include <vector>
 
 namespace {
@@ -89,11 +90,11 @@ class ElfStringTable {
     return startOffset;
   }
 
-  constexpr const uint8_t* start() const {
-    return bytes_.data();
+  constexpr std::span<const uint8_t> span() const {
+    return std::span<const uint8_t>{bytes_};
   }
 
-  constexpr size_t size() const {
+  constexpr size_t size_bytes() const {
     return bytes_.size();
   }
 
@@ -115,11 +116,11 @@ class ElfSymbolTable {
     syms_.emplace_back(std::forward<T>(sym));
   }
 
-  const uint8_t* start() const {
-    return reinterpret_cast<const uint8_t*>(syms_.data());
+  constexpr std::span<const Elf64_Sym> span() const {
+    return std::span<const Elf64_Sym>{syms_};
   }
 
-  constexpr size_t size() const {
+  constexpr size_t size_bytes() const {
     return syms_.size() * sizeof(syms_[0]);
   }
 
@@ -212,7 +213,7 @@ void initSegments(
   dynsym.p_flags = PF_R;
   dynsym.p_offset = segmentOffset;
   dynsym.p_vaddr = kDynsymStart;
-  dynsym.p_filesz = symbols.size() + symbolNames.size();
+  dynsym.p_filesz = symbols.size_bytes() + symbolNames.size_bytes();
   dynsym.p_memsz = dynsym.p_filesz;
   segmentOffset += dynsym.p_filesz;
 }
@@ -246,7 +247,7 @@ void initSections(
   dynsym.sh_flags = SHF_ALLOC | SHF_INFO_LINK;
   dynsym.sh_addr = header.getSegmentHeader(SegmentIdx::Dynsym).p_vaddr;
   dynsym.sh_offset = sectionOffset;
-  dynsym.sh_size = symbols.size();
+  dynsym.sh_size = symbols.size_bytes();
   dynsym.sh_link = raw(SectionIdx::Dynstr);
   // Index of the first non-null symbol.
   dynsym.sh_info = 1;
@@ -260,7 +261,7 @@ void initSections(
   dynstr.sh_flags = SHF_ALLOC; // TODO: Should this have SHF_STRINGS?
   dynstr.sh_addr = kDynstrStart;
   dynstr.sh_offset = sectionOffset;
-  dynstr.sh_size = symbolNames.size();
+  dynstr.sh_size = symbolNames.size_bytes();
   sectionOffset += dynstr.sh_size;
 
   // .symtab
@@ -270,7 +271,7 @@ void initSections(
   symtab.sh_type = SHT_SYMTAB;
   symtab.sh_flags = SHF_INFO_LINK;
   symtab.sh_offset = sectionOffset;
-  symtab.sh_size = symbols.size();
+  symtab.sh_size = symbols.size_bytes();
   symtab.sh_link = raw(SectionIdx::Strtab);
   // Index of the first non-null symbol.
   symtab.sh_info = 1;
@@ -284,7 +285,7 @@ void initSections(
   strtab.sh_type = SHT_STRTAB;
   strtab.sh_flags = SHF_STRINGS;
   strtab.sh_offset = sectionOffset;
-  strtab.sh_size = symbolNames.size();
+  strtab.sh_size = symbolNames.size_bytes();
   sectionOffset += strtab.sh_size;
 
   // .shstrtab
@@ -294,7 +295,7 @@ void initSections(
   shstrtab.sh_type = SHT_STRTAB;
   shstrtab.sh_flags = SHF_STRINGS;
   shstrtab.sh_offset = sectionOffset;
-  shstrtab.sh_size = sectionNames.size();
+  shstrtab.sh_size = sectionNames.size_bytes();
   sectionOffset += shstrtab.sh_size;
 }
 
@@ -302,6 +303,11 @@ template <class T>
 void write(std::ostream& os, T* data, size_t size) {
   os.write(reinterpret_cast<const char*>(data), size);
   assert(!os.bad());
+}
+
+template <class T>
+void write(std::ostream& os, std::span<T> buf) {
+  write(os, buf.data(), buf.size_bytes());
 }
 
 } // namespace
@@ -336,15 +342,15 @@ int main(int argc, char** argv) {
   // .text
   write(out, collatz_conjecture, kTextSize);
   // .dynsym
-  write(out, symbols.start(), symbols.size());
+  write(out, symbols.span());
   // .dynstr
-  write(out, symbolNames.start(), symbolNames.size());
+  write(out, symbolNames.span());
   // .symtab
-  write(out, symbols.start(), symbols.size());
+  write(out, symbols.span());
   // .strtab
-  write(out, symbolNames.start(), symbolNames.size());
+  write(out, symbolNames.span());
   // .shstrtab
-  write(out, sectionNames.start(), sectionNames.size());
+  write(out, sectionNames.span());
 
   std::filesystem::permissions(
     outPath,
