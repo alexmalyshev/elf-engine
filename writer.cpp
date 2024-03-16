@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
   if (argc != 2) {
     std::println(
       stderr,
-      "Error: Takes exactly one argument (the path to write the shared object"
+      "Error: Takes exactly one argument (the path to write the shared object)"
     );
     return 1;
   }
