@@ -41,7 +41,7 @@ constexpr uint32_t raw(SectionIdx idx) {
 // Note: These are pulled out of thin air.
 constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
-constexpr size_t kTextAlign = 0;
+constexpr size_t kTextAlign = 0x1000;
 constexpr size_t kDynsymStart = 0x2000000;
 
 extern "C" size_t collatz_conjecture(uint64_t n) {
@@ -149,7 +149,7 @@ struct ElfObject {
     text.p_type = PT_LOAD;
     text.p_flags = PF_R | PF_X;
     text.p_offset = segmentOffset;
-    text.p_vaddr = kTextStart;
+    text.p_vaddr = kTextStart + segmentOffset;
     text.p_filesz = kTextSize;
     text.p_memsz = kTextSize;
     text.p_align = kTextAlign;
@@ -161,7 +161,7 @@ struct ElfObject {
     dynsym.p_type = PT_LOAD;
     dynsym.p_flags = PF_R;
     dynsym.p_offset = segmentOffset;
-    dynsym.p_vaddr = kDynsymStart;
+    dynsym.p_vaddr = kDynsymStart + segmentOffset;
     dynsym.p_filesz = symbols.size_bytes() + symbolNames.size_bytes();
     dynsym.p_memsz = dynsym.p_filesz;
     segmentOffset += dynsym.p_filesz;
@@ -180,8 +180,6 @@ struct ElfObject {
     text.sh_addr = headers.getSegmentHeader(SegmentIdx::Text).p_vaddr;
     text.sh_offset = sectionOffset;
     text.sh_size = kTextSize;
-    text.sh_addralign = kTextAlign;
-    assert(text.sh_addralign == 0 || (text.sh_addr % text.sh_addralign) == 0);
     sectionOffset += text.sh_size;
 
     // .dynsym
