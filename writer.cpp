@@ -1,5 +1,7 @@
 #include "elf.h"
 #include "runtime.h"
+#include "string-table.h"
+#include "symbol-table.h"
 
 #include <array>
 #include <cassert>
@@ -39,7 +41,7 @@ constexpr uint32_t raw(SectionIdx idx) {
 // Note: These are pulled out of thin air.
 constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
-constexpr size_t kTextAlign = 0x1000;
+constexpr size_t kTextAlign = 0;
 constexpr size_t kDynsymStart = 0x2000000;
 
 extern "C" size_t collatz_conjecture(uint64_t n) {
@@ -54,65 +56,6 @@ extern "C" size_t collatz_conjecture(uint64_t n) {
 
   return steps;
 }
-
-// String table encoded for ELF.
-class ElfStringTable {
- public:
-  ElfStringTable() {
-    // All string tables begin with a NUL character.
-    bytes_.push_back(0);
-  }
-
-  // Insert a string into the symbol table, return its offset.
-  uint32_t insert(std::string_view s) {
-    auto startOffset = static_cast<uint32_t>(bytes_.size());
-    assert(size_t{startOffset} == bytes_.size());
-
-    // Strings are always encoded with a NUL terminator.
-    bytes_.resize(bytes_.size() + s.size() + 1);
-    std::memcpy(&bytes_[startOffset], s.data(), s.size());
-
-    return startOffset;
-  }
-
-  constexpr std::span<const uint8_t> span() const {
-    return std::span<const uint8_t>{bytes_};
-  }
-
-  constexpr size_t size_bytes() const {
-    return bytes_.size();
-  }
-
- private:
-  std::vector<uint8_t> bytes_;
-};
-
-// Symbol table encoded for ELF.
-class ElfSymbolTable {
- public:
-  ElfSymbolTable() {
-    // Symbol table must always start with an undefined symbol.
-    Elf64_Sym null_sym;
-    std::memset(&null_sym, 0, sizeof(null_sym));
-    insert(null_sym);
-  }
-
-  template <class T>
-  void insert(T&& sym) {
-    syms_.emplace_back(std::forward<T>(sym));
-  }
-
-  constexpr std::span<const Elf64_Sym> span() const {
-    return std::span<const Elf64_Sym>{syms_};
-  }
-
-  constexpr size_t size_bytes() const {
-    return syms_.size() * sizeof(syms_[0]);
-  }
-
- private:
-  std::vector<Elf64_Sym> syms_;
-};
 
 // All headers in an ELF file.
 struct ElfHeaders {
