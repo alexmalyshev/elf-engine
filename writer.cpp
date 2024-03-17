@@ -117,8 +117,8 @@ struct ElfHeaders {
 struct ElfObject {
   ElfObject() {
     initSymbols();
-    initSegments();
     initSections();
+    initSegments();
   }
 
   ElfHeaders headers;
@@ -139,34 +139,6 @@ struct ElfObject {
     symbols.insert(std::move(sym));
   }
 
-  void initSegments() {
-    // Segments start right after the header table.
-    uint32_t segmentOffset = sizeof(headers);
-
-    // Readable and executable segment for .text
-
-    auto& text = headers.getSegmentHeader(SegmentIdx::Text);
-    text.p_type = PT_LOAD;
-    text.p_flags = PF_R | PF_X;
-    text.p_offset = segmentOffset;
-    text.p_vaddr = kTextStart + segmentOffset;
-    text.p_filesz = kTextSize;
-    text.p_memsz = kTextSize;
-    text.p_align = kTextAlign;
-    segmentOffset += text.p_filesz;
-
-    // Readable segment for .dynsym and .dynstr
-
-    auto& dynsym = headers.getSegmentHeader(SegmentIdx::Dynsym);
-    dynsym.p_type = PT_LOAD;
-    dynsym.p_flags = PF_R;
-    dynsym.p_offset = segmentOffset;
-    dynsym.p_vaddr = kDynsymStart + segmentOffset;
-    dynsym.p_filesz = symbols.size_bytes() + symbolNames.size_bytes();
-    dynsym.p_memsz = dynsym.p_filesz;
-    segmentOffset += dynsym.p_filesz;
-  }
-
   void initSections() {
     // Sections start right after the header table.
     uint32_t sectionOffset = sizeof(headers);
@@ -177,7 +149,7 @@ struct ElfObject {
     text.sh_name = sectionNames.insert(".text");
     text.sh_type = SHT_PROGBITS;
     text.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    text.sh_addr = headers.getSegmentHeader(SegmentIdx::Text).p_vaddr;
+    text.sh_addr = kTextStart + sectionOffset;
     text.sh_offset = sectionOffset;
     text.sh_size = kTextSize;
     sectionOffset += text.sh_size;
@@ -188,7 +160,7 @@ struct ElfObject {
     dynsym.sh_name = sectionNames.insert(".dynsym");
     dynsym.sh_type = SHT_DYNSYM;
     dynsym.sh_flags = SHF_ALLOC;
-    dynsym.sh_addr = headers.getSegmentHeader(SegmentIdx::Dynsym).p_vaddr;
+    dynsym.sh_addr = kDynsymStart + sectionOffset;
     dynsym.sh_offset = sectionOffset;
     dynsym.sh_size = symbols.size_bytes();
     dynsym.sh_link = raw(SectionIdx::Dynstr);
@@ -201,7 +173,7 @@ struct ElfObject {
     auto& dynstr = headers.getSectionHeader(SectionIdx::Dynstr);
     dynstr.sh_name = sectionNames.insert(".dynstr");
     dynstr.sh_type = SHT_STRTAB;
-    dynstr.sh_flags = SHF_ALLOC; // TODO: Should this have SHF_STRINGS?
+    dynstr.sh_flags = SHF_ALLOC;
     dynstr.sh_addr = dynsym.sh_addr + dynsym.sh_size;
     dynstr.sh_offset = sectionOffset;
     dynstr.sh_size = symbolNames.size_bytes();
@@ -237,6 +209,32 @@ struct ElfObject {
     shstrtab.sh_offset = sectionOffset;
     shstrtab.sh_size = sectionNames.size_bytes();
     sectionOffset += shstrtab.sh_size;
+  }
+
+  void initSegments() {
+    // Readable and executable segment for .text
+    auto& text_section = headers.getSectionHeader(SectionIdx::Text);
+
+    auto& text = headers.getSegmentHeader(SegmentIdx::Text);
+    text.p_type = PT_LOAD;
+    text.p_flags = PF_R | PF_X;
+    text.p_offset = text_section.sh_offset;
+    text.p_vaddr = text_section.sh_addr;
+    text.p_filesz = text_section.sh_size;
+    text.p_memsz = text.p_filesz;
+    text.p_align = kTextAlign;
+
+    // Readable segment for .dynsym and .dynstr
+    auto& dynsym_section = headers.getSectionHeader(SectionIdx::Dynsym);
+    auto& dynstr_section = headers.getSectionHeader(SectionIdx::Dynstr);
+
+    auto& dynsym = headers.getSegmentHeader(SegmentIdx::Dynsym);
+    dynsym.p_type = PT_LOAD;
+    dynsym.p_flags = PF_R;
+    dynsym.p_offset = dynsym_section.sh_offset;
+    dynsym.p_vaddr = dynsym_section.sh_addr;
+    dynsym.p_filesz = dynsym_section.sh_size + dynstr_section.sh_size;
+    dynsym.p_memsz = dynsym.p_filesz;
   }
 };
 
