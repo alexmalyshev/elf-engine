@@ -1,7 +1,9 @@
-#include "elf.h"
+#include "dynamic-table.h"
 #include "runtime.h"
 #include "string-table.h"
 #include "symbol-table.h"
+
+#include <elf.h>
 
 #include <array>
 #include <cassert>
@@ -16,6 +18,10 @@ namespace {
 enum class SegmentIdx : uint32_t {
   Text,
   Dynsym,
+
+#ifdef DYNAMIC_FIXED
+  Dynamic,
+#endif
   Total,
 };
 
@@ -24,6 +30,7 @@ enum class SectionIdx : uint32_t {
   Text,
   Dynsym,
   Dynstr,
+  Dynamic,
   Symtab,
   Strtab,
   Shstrtab,
@@ -43,6 +50,7 @@ constexpr size_t kTextStart = 0x1000000;
 constexpr size_t kTextSize = 96;
 constexpr size_t kTextAlign = 0x1000;
 constexpr size_t kDynsymStart = 0x2000000;
+constexpr size_t kDynamicStart = 0x3000000;
 
 extern "C" size_t collatz_conjecture(uint64_t n) {
   auto fn = functionTable[0];
@@ -122,6 +130,7 @@ struct ElfObject {
   }
 
   ElfHeaders headers;
+  ElfDynamicTable dynamics;
   ElfSymbolTable symbols;
   ElfStringTable symbolNames;
   ElfStringTable sectionNames;
@@ -179,6 +188,29 @@ struct ElfObject {
     dynstr.sh_size = symbolNames.size_bytes();
     sectionOffset += dynstr.sh_size;
 
+    // Set up dynamics.
+    Elf64_Dyn dyn;
+    dyn.d_tag = DT_STRTAB;
+    dyn.d_un.d_ptr = dynstr.sh_addr;
+    dynamics.insert(std::move(dyn));
+
+    dyn.d_tag = DT_SYMTAB;
+    dyn.d_un.d_ptr = dynsym.sh_addr;
+    dynamics.insert(std::move(dyn));
+
+    // .dynamic
+
+    auto& dynamic = headers.getSectionHeader(SectionIdx::Dynamic);
+    dynamic.sh_name = sectionNames.insert(".dynamic");
+    dynamic.sh_type = SHT_DYNAMIC;
+    dynamic.sh_flags = SHF_ALLOC | SHF_WRITE;
+    dynamic.sh_addr = kDynamicStart;// + sectionOffset;
+    dynamic.sh_offset = sectionOffset;
+    dynamic.sh_size = dynamics.size_bytes();
+    dynamic.sh_link = raw(SectionIdx::Dynstr);
+    dynamic.sh_entsize = sizeof(Elf64_Dyn);
+    sectionOffset += dynamic.sh_size;
+
     // .symtab
 
     auto& symtab = headers.getSectionHeader(SectionIdx::Symtab);
@@ -235,6 +267,21 @@ struct ElfObject {
     dynsym.p_vaddr = dynsym_section.sh_addr;
     dynsym.p_filesz = dynsym_section.sh_size + dynstr_section.sh_size;
     dynsym.p_memsz = dynsym.p_filesz;
+
+#ifdef DYNAMIC_FIXED
+    // FIXME: This leads to a SIGSEGV in dlopen() as it is.
+
+    // Readable and writable segment for .dynamic
+    auto& dynamic_section = headers.getSectionHeader(SectionIdx::Dynamic);
+
+    auto& dynamic = headers.getSegmentHeader(SegmentIdx::Dynamic);
+    dynamic.p_type = PT_DYNAMIC;
+    dynamic.p_flags = PF_R | PF_W;
+    dynamic.p_offset = dynamic_section.sh_offset;
+    dynamic.p_vaddr = dynamic_section.sh_addr;
+    dynamic.p_filesz = dynamic_section.sh_size;
+    dynamic.p_memsz = dynamic.p_filesz;
+#endif
   }
 };
 
@@ -275,6 +322,8 @@ int main(int argc, char** argv) {
   write(out, elf.symbols.span());
   // .dynstr
   write(out, elf.symbolNames.span());
+  // .dynamic
+  write(out, elf.dynamics.span());
   // .symtab
   write(out, elf.symbols.span());
   // .strtab
