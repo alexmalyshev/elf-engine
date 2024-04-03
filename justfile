@@ -31,6 +31,6 @@ check_bundle:
     readelf -a {{bundle}}
 
 clean:
-    rm {{bundle}} {{runtime}} {{writer}} {{engine}} || true
+    rm {{bundle}} {{runtime}} {{writer}} {{engine}} 2> /dev/null || true
 
 run: run_writer run_engine

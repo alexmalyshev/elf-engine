@@ -11,7 +11,7 @@ class ElfStringTable {
  public:
   ElfStringTable() {
     // All string tables begin with a NUL character.
-    bytes_.push_back(0);
+    bytes_.push_back('\0');
   }
 
   // Insert a string into the symbol table, return its offset.
@@ -26,12 +26,8 @@ class ElfStringTable {
     return startOffset;
   }
 
-  constexpr std::span<const uint8_t> span() const {
-    return std::span<const uint8_t>{bytes_};
-  }
-
-  constexpr size_t size_bytes() const {
-    return bytes_.size();
+  constexpr std::span<const std::byte> bytes() const {
+    return std::as_bytes(std::span{bytes_});
   }
 
  private:

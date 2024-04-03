@@ -22,12 +22,8 @@ class ElfDynamicTable {
     std::swap(dyns_[len - 2], dyns_[len - 1]);
   }
 
-  constexpr std::span<const Elf64_Dyn> span() const {
-    return std::span<const Elf64_Dyn>{dyns_};
-  }
-
-  constexpr size_t size_bytes() const {
-    return span().size_bytes();
+  constexpr std::span<const std::byte> bytes() const {
+    return std::as_bytes(std::span{dyns_});
   }
 
  private:

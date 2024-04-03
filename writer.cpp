@@ -81,11 +81,8 @@ struct ElfHeaders {
     return sectionHeaders[raw(idx)];
   }
 
-  std::span<const uint8_t> span() const {
-    return std::span<const uint8_t>{
-      reinterpret_cast<const uint8_t*>(this),
-      sizeof(*this)
-    };
+  constexpr std::span<const std::byte> bytes() const {
+    return std::as_bytes(std::span{this, 1});
   }
 
   Elf64_Ehdr fileHeader;
@@ -171,7 +168,7 @@ struct ElfObject {
     dynsym.sh_flags = SHF_ALLOC;
     dynsym.sh_addr = kDynsymStart + sectionOffset;
     dynsym.sh_offset = sectionOffset;
-    dynsym.sh_size = symbols.size_bytes();
+    dynsym.sh_size = symbols.bytes().size();
     dynsym.sh_link = raw(SectionIdx::Dynstr);
     // Index of the first non-null symbol.
     dynsym.sh_info = 1;
@@ -185,7 +182,7 @@ struct ElfObject {
     dynstr.sh_flags = SHF_ALLOC;
     dynstr.sh_addr = dynsym.sh_addr + dynsym.sh_size;
     dynstr.sh_offset = sectionOffset;
-    dynstr.sh_size = symbolNames.size_bytes();
+    dynstr.sh_size = symbolNames.bytes().size();
     sectionOffset += dynstr.sh_size;
 
     // Set up dynamics.
@@ -206,7 +203,7 @@ struct ElfObject {
     dynamic.sh_flags = SHF_ALLOC | SHF_WRITE;
     dynamic.sh_addr = kDynamicStart;// + sectionOffset;
     dynamic.sh_offset = sectionOffset;
-    dynamic.sh_size = dynamics.size_bytes();
+    dynamic.sh_size = dynamics.bytes().size();
     dynamic.sh_link = raw(SectionIdx::Dynstr);
     dynamic.sh_entsize = sizeof(Elf64_Dyn);
     sectionOffset += dynamic.sh_size;
@@ -217,7 +214,7 @@ struct ElfObject {
     symtab.sh_name = sectionNames.insert(".symtab");
     symtab.sh_type = SHT_SYMTAB;
     symtab.sh_offset = sectionOffset;
-    symtab.sh_size = symbols.size_bytes();
+    symtab.sh_size = symbols.bytes().size();
     symtab.sh_link = raw(SectionIdx::Strtab);
     // Index of the first non-null symbol.
     symtab.sh_info = 1;
@@ -230,7 +227,7 @@ struct ElfObject {
     strtab.sh_name = sectionNames.insert(".strtab");
     strtab.sh_type = SHT_STRTAB;
     strtab.sh_offset = sectionOffset;
-    strtab.sh_size = symbolNames.size_bytes();
+    strtab.sh_size = symbolNames.bytes().size();
     sectionOffset += strtab.sh_size;
 
     // .shstrtab
@@ -239,7 +236,7 @@ struct ElfObject {
     shstrtab.sh_name = sectionNames.insert(".shstrtab");
     shstrtab.sh_type = SHT_STRTAB;
     shstrtab.sh_offset = sectionOffset;
-    shstrtab.sh_size = sectionNames.size_bytes();
+    shstrtab.sh_size = sectionNames.bytes().size();
     sectionOffset += shstrtab.sh_size;
   }
 
@@ -314,22 +311,22 @@ int main(int argc, char** argv) {
   std::ofstream out{outPath};
 
   // All the headers (file, program, sections).
-  write(out, elf.headers.span());
+  write(out, elf.headers.bytes());
 
   // .text
   write(out, collatz_conjecture, kTextSize);
   // .dynsym
-  write(out, elf.symbols.span());
+  write(out, elf.symbols.bytes());
   // .dynstr
-  write(out, elf.symbolNames.span());
+  write(out, elf.symbolNames.bytes());
   // .dynamic
-  write(out, elf.dynamics.span());
+  write(out, elf.dynamics.bytes());
   // .symtab
-  write(out, elf.symbols.span());
+  write(out, elf.symbols.bytes());
   // .strtab
-  write(out, elf.symbolNames.span());
+  write(out, elf.symbolNames.bytes());
   // .shstrtab
-  write(out, elf.sectionNames.span());
+  write(out, elf.sectionNames.bytes());
 
   std::filesystem::permissions(
     outPath,
