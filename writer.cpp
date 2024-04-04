@@ -127,158 +127,205 @@ struct ElfObject {
   }
 
   ElfHeaders headers;
-  ElfDynamicTable dynamics;
-  ElfSymbolTable symbols;
-  ElfStringTable symbolNames;
-  ElfStringTable sectionNames;
+
+  ElfDynamicTable dynamic;
+  ElfSymbolTable dynsym;
+  ElfStringTable dynstr;
+  ElfSymbolTable symtab;
+  ElfStringTable strtab;
+  ElfStringTable shstrtab;
+
+  uint32_t sectionOffset{0};
 
  private:
   void initSymbols() {
     Elf64_Sym sym;
     memset(&sym, 0, sizeof(sym));
-    sym.st_name = symbolNames.insert("collatz_conjecture");
+    sym.st_name = strtab.insert("collatz_conjecture");
     sym.st_info = ELF64_ST_INFO(STB_GLOBAL, STT_FUNC);
     sym.st_shndx = raw(SectionIdx::Text);
     sym.st_value = kTextStart;
     sym.st_size = kTextSize;
 
-    symbols.insert(std::move(sym));
+    symtab.insert(std::move(sym));
+
+    dynsym = symtab;
+    dynstr = strtab;
+  }
+
+  void initTextSection() {
+    auto& section = headers.getSectionHeader(SectionIdx::Text);
+    section.sh_name = shstrtab.insert(".text");
+    section.sh_type = SHT_PROGBITS;
+    section.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    section.sh_addr = kTextStart + sectionOffset;
+    section.sh_offset = sectionOffset;
+    section.sh_size = kTextSize;
+    sectionOffset += section.sh_size;
+  }
+
+  void initDynsymSection() {
+    auto& section = headers.getSectionHeader(SectionIdx::Dynsym);
+    section.sh_name = shstrtab.insert(".dynsym");
+    section.sh_type = SHT_DYNSYM;
+    section.sh_flags = SHF_ALLOC;
+    section.sh_addr = kDynsymStart + sectionOffset;
+    section.sh_offset = sectionOffset;
+    section.sh_size = dynsym.bytes().size();
+    section.sh_link = raw(SectionIdx::Dynstr);
+    // Index of the first non-null symbol.
+    section.sh_info = 1;
+    section.sh_entsize = sizeof(Elf64_Sym);
+    sectionOffset += section.sh_size;
+  }
+
+  void initDynstrSection() {
+    auto& dynsymSection = headers.getSectionHeader(SectionIdx::Dynsym);
+
+    auto& section = headers.getSectionHeader(SectionIdx::Dynstr);
+    section.sh_name = shstrtab.insert(".dynstr");
+    section.sh_type = SHT_STRTAB;
+    section.sh_flags = SHF_ALLOC;
+    section.sh_addr = dynsymSection.sh_addr + dynsymSection.sh_size;
+    section.sh_offset = sectionOffset;
+    section.sh_size = dynstr.bytes().size();
+    sectionOffset += section.sh_size;
+  }
+
+  void initDynamicSection() {
+    auto& dynsymSection = headers.getSectionHeader(SectionIdx::Dynsym);
+    auto& dynstrSection = headers.getSectionHeader(SectionIdx::Dynstr);
+
+    // Set up dynamic table now that .dynsym and .dynstr are initialized.
+    Elf64_Dyn dyn;
+    dyn.d_tag = DT_STRTAB;
+    dyn.d_un.d_ptr = dynstrSection.sh_addr;
+    dynamic.insert(std::move(dyn));
+
+    dyn.d_tag = DT_SYMTAB;
+    dyn.d_un.d_ptr = dynsymSection.sh_addr;
+    dynamic.insert(std::move(dyn));
+
+    auto& section = headers.getSectionHeader(SectionIdx::Dynamic);
+    section.sh_name = shstrtab.insert(".dynamic");
+    section.sh_type = SHT_DYNAMIC;
+    section.sh_flags = SHF_ALLOC | SHF_WRITE;
+    section.sh_addr = kDynamicStart + sectionOffset;
+    section.sh_offset = sectionOffset;
+    section.sh_size = dynamic.bytes().size();
+    section.sh_link = raw(SectionIdx::Dynstr);
+    section.sh_entsize = sizeof(Elf64_Dyn);
+    sectionOffset += section.sh_size;
+
+    Elf64_Sym sym;
+    memset(&sym, 0, sizeof(sym));
+    sym.st_name = strtab.insert("_DYNAMIC");
+    sym.st_info = ELF64_ST_INFO(STB_LOCAL, STT_OBJECT);
+    sym.st_shndx = raw(SectionIdx::Dynamic);
+    sym.st_value = section.sh_addr;
+    sym.st_size = section.sh_size;
+
+    symtab.insert(std::move(sym));
+  }
+
+  void initSymtabSection() {
+    auto& section = headers.getSectionHeader(SectionIdx::Symtab);
+    section.sh_name = shstrtab.insert(".symtab");
+    section.sh_type = SHT_SYMTAB;
+    section.sh_offset = sectionOffset;
+    section.sh_size = symtab.bytes().size();
+    section.sh_link = raw(SectionIdx::Strtab);
+    // Index of the first non-null symbol.
+    section.sh_info = 1;
+    section.sh_entsize = sizeof(Elf64_Sym);
+    sectionOffset += section.sh_size;
+  }
+
+  void initStrtabSection() {
+    auto& section = headers.getSectionHeader(SectionIdx::Strtab);
+    section.sh_name = shstrtab.insert(".strtab");
+    section.sh_type = SHT_STRTAB;
+    section.sh_offset = sectionOffset;
+    section.sh_size = strtab.bytes().size();
+    sectionOffset += section.sh_size;
+  }
+
+  void initShstrtabSection() {
+    auto& section = headers.getSectionHeader(SectionIdx::Shstrtab);
+    section.sh_name = shstrtab.insert(".shstrtab");
+    section.sh_type = SHT_STRTAB;
+    section.sh_offset = sectionOffset;
+    section.sh_size = shstrtab.bytes().size();
+    sectionOffset += section.sh_size;
   }
 
   void initSections() {
     // Sections start right after the header table.
-    uint32_t sectionOffset = sizeof(headers);
+    sectionOffset = sizeof(headers);
 
-    // .text
+    // The order here must match that of SectionIdx.
 
-    auto& text = headers.getSectionHeader(SectionIdx::Text);
-    text.sh_name = sectionNames.insert(".text");
-    text.sh_type = SHT_PROGBITS;
-    text.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    text.sh_addr = kTextStart + sectionOffset;
-    text.sh_offset = sectionOffset;
-    text.sh_size = kTextSize;
-    sectionOffset += text.sh_size;
-
-    // .dynsym
-
-    auto& dynsym = headers.getSectionHeader(SectionIdx::Dynsym);
-    dynsym.sh_name = sectionNames.insert(".dynsym");
-    dynsym.sh_type = SHT_DYNSYM;
-    dynsym.sh_flags = SHF_ALLOC;
-    dynsym.sh_addr = kDynsymStart + sectionOffset;
-    dynsym.sh_offset = sectionOffset;
-    dynsym.sh_size = symbols.bytes().size();
-    dynsym.sh_link = raw(SectionIdx::Dynstr);
-    // Index of the first non-null symbol.
-    dynsym.sh_info = 1;
-    dynsym.sh_entsize = sizeof(Elf64_Sym);
-    sectionOffset += dynsym.sh_size;
-
-    // .dynstr
-    auto& dynstr = headers.getSectionHeader(SectionIdx::Dynstr);
-    dynstr.sh_name = sectionNames.insert(".dynstr");
-    dynstr.sh_type = SHT_STRTAB;
-    dynstr.sh_flags = SHF_ALLOC;
-    dynstr.sh_addr = dynsym.sh_addr + dynsym.sh_size;
-    dynstr.sh_offset = sectionOffset;
-    dynstr.sh_size = symbolNames.bytes().size();
-    sectionOffset += dynstr.sh_size;
-
-    // Set up dynamics.
-    Elf64_Dyn dyn;
-    dyn.d_tag = DT_STRTAB;
-    dyn.d_un.d_ptr = dynstr.sh_addr;
-    dynamics.insert(std::move(dyn));
-
-    dyn.d_tag = DT_SYMTAB;
-    dyn.d_un.d_ptr = dynsym.sh_addr;
-    dynamics.insert(std::move(dyn));
-
-    // .dynamic
-
-    auto& dynamic = headers.getSectionHeader(SectionIdx::Dynamic);
-    dynamic.sh_name = sectionNames.insert(".dynamic");
-    dynamic.sh_type = SHT_DYNAMIC;
-    dynamic.sh_flags = SHF_ALLOC | SHF_WRITE;
-    dynamic.sh_addr = kDynamicStart;// + sectionOffset;
-    dynamic.sh_offset = sectionOffset;
-    dynamic.sh_size = dynamics.bytes().size();
-    dynamic.sh_link = raw(SectionIdx::Dynstr);
-    dynamic.sh_entsize = sizeof(Elf64_Dyn);
-    sectionOffset += dynamic.sh_size;
-
-    // .symtab
-
-    auto& symtab = headers.getSectionHeader(SectionIdx::Symtab);
-    symtab.sh_name = sectionNames.insert(".symtab");
-    symtab.sh_type = SHT_SYMTAB;
-    symtab.sh_offset = sectionOffset;
-    symtab.sh_size = symbols.bytes().size();
-    symtab.sh_link = raw(SectionIdx::Strtab);
-    // Index of the first non-null symbol.
-    symtab.sh_info = 1;
-    symtab.sh_entsize = sizeof(Elf64_Sym);
-    sectionOffset += symtab.sh_size;
-
-    // .strtab
-
-    auto& strtab = headers.getSectionHeader(SectionIdx::Strtab);
-    strtab.sh_name = sectionNames.insert(".strtab");
-    strtab.sh_type = SHT_STRTAB;
-    strtab.sh_offset = sectionOffset;
-    strtab.sh_size = symbolNames.bytes().size();
-    sectionOffset += strtab.sh_size;
-
-    // .shstrtab
-
-    auto& shstrtab = headers.getSectionHeader(SectionIdx::Shstrtab);
-    shstrtab.sh_name = sectionNames.insert(".shstrtab");
-    shstrtab.sh_type = SHT_STRTAB;
-    shstrtab.sh_offset = sectionOffset;
-    shstrtab.sh_size = sectionNames.bytes().size();
-    sectionOffset += shstrtab.sh_size;
+    initTextSection();
+    initDynsymSection();
+    initDynstrSection();
+    initDynamicSection();
+    initSymtabSection();
+    initStrtabSection();
+    initShstrtabSection();
   }
 
-  void initSegments() {
-    // Readable and executable segment for .text
-    auto& text_section = headers.getSectionHeader(SectionIdx::Text);
+  void initTextSegment() {
+    // .text is readable and executable.
+    auto& section = headers.getSectionHeader(SectionIdx::Text);
 
-    auto& text = headers.getSegmentHeader(SegmentIdx::Text);
-    text.p_type = PT_LOAD;
-    text.p_flags = PF_R | PF_X;
-    text.p_offset = text_section.sh_offset;
-    text.p_vaddr = text_section.sh_addr;
-    text.p_filesz = text_section.sh_size;
-    text.p_memsz = text.p_filesz;
-    text.p_align = kTextAlign;
+    auto& segment = headers.getSegmentHeader(SegmentIdx::Text);
+    segment.p_type = PT_LOAD;
+    segment.p_flags = PF_R | PF_X;
+    segment.p_offset = section.sh_offset;
+    segment.p_vaddr = section.sh_addr;
+    segment.p_filesz = section.sh_size;
+    segment.p_memsz = segment.p_filesz;
+    segment.p_align = kTextAlign;
+  }
 
-    // Readable segment for .dynsym and .dynstr
-    auto& dynsym_section = headers.getSectionHeader(SectionIdx::Dynsym);
-    auto& dynstr_section = headers.getSectionHeader(SectionIdx::Dynstr);
+  void initReadonlySegment() {
+    // .dynsym and .dynstr are in a readonly segment.
+    auto& dynsym = headers.getSectionHeader(SectionIdx::Dynsym);
+    auto& dynstr = headers.getSectionHeader(SectionIdx::Dynstr);
 
-    auto& dynsym = headers.getSegmentHeader(SegmentIdx::Dynsym);
-    dynsym.p_type = PT_LOAD;
-    dynsym.p_flags = PF_R;
-    dynsym.p_offset = dynsym_section.sh_offset;
-    dynsym.p_vaddr = dynsym_section.sh_addr;
-    dynsym.p_filesz = dynsym_section.sh_size + dynstr_section.sh_size;
-    dynsym.p_memsz = dynsym.p_filesz;
+    // Below expects this.
+    assert(dynsym.sh_addr < dynstr.sh_addr);
 
+    auto& segment = headers.getSegmentHeader(SegmentIdx::Dynsym);
+    segment.p_type = PT_LOAD;
+    segment.p_flags = PF_R;
+    segment.p_offset = dynsym.sh_offset;
+    segment.p_vaddr = dynsym.sh_addr;
+    segment.p_filesz = dynsym.sh_size + dynstr.sh_size;
+    segment.p_memsz = segment.p_filesz;
+  }
+
+  void initDynamicSegment() {
 #ifdef DYNAMIC_FIXED
     // FIXME: This leads to a SIGSEGV in dlopen() as it is.
 
     // Readable and writable segment for .dynamic
-    auto& dynamic_section = headers.getSectionHeader(SectionIdx::Dynamic);
+    auto& section = headers.getSectionHeader(SectionIdx::Dynamic);
 
-    auto& dynamic = headers.getSegmentHeader(SegmentIdx::Dynamic);
-    dynamic.p_type = PT_DYNAMIC;
-    dynamic.p_flags = PF_R | PF_W;
-    dynamic.p_offset = dynamic_section.sh_offset;
-    dynamic.p_vaddr = dynamic_section.sh_addr;
-    dynamic.p_filesz = dynamic_section.sh_size;
-    dynamic.p_memsz = dynamic.p_filesz;
+    auto& segment = headers.getSegmentHeader(SegmentIdx::Dynamic);
+    segment.p_type = PT_DYNAMIC;
+    segment.p_flags = PF_R | PF_W;
+    segment.p_offset = section.sh_offset;
+    segment.p_vaddr = section.sh_addr;
+    segment.p_filesz = section.sh_size;
+    segment.p_memsz = segment.p_filesz;
 #endif
+  }
+
+  void initSegments() {
+    initTextSegment();
+    initReadonlySegment();
+    initDynamicSegment();
   }
 };
 
@@ -316,17 +363,17 @@ int main(int argc, char** argv) {
   // .text
   write(out, collatz_conjecture, kTextSize);
   // .dynsym
-  write(out, elf.symbols.bytes());
+  write(out, elf.dynsym.bytes());
   // .dynstr
-  write(out, elf.symbolNames.bytes());
+  write(out, elf.dynstr.bytes());
   // .dynamic
-  write(out, elf.dynamics.bytes());
+  write(out, elf.dynamic.bytes());
   // .symtab
-  write(out, elf.symbols.bytes());
+  write(out, elf.symtab.bytes());
   // .strtab
-  write(out, elf.symbolNames.bytes());
+  write(out, elf.strtab.bytes());
   // .shstrtab
-  write(out, elf.sectionNames.bytes());
+  write(out, elf.shstrtab.bytes());
 
   std::filesystem::permissions(
     outPath,
