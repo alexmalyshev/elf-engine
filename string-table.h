@@ -14,6 +14,26 @@ class ElfStringTable {
     bytes_.push_back('\0');
   }
 
+  // Read a string from a given offset.
+  std::string_view get(uint32_t offset) const {
+    if (offset >= bytes_.size()) {
+      throw std::runtime_error{"Offset is greater than string table size"};
+    }
+
+    auto end = offset;
+    while (bytes_[end] != '\0') {
+      ++end;
+      if (end >= bytes_.size()) {
+        throw std::runtime_error{"String table is not null terminated properly"};
+      }
+    }
+
+    return std::string_view{
+      reinterpret_cast<const char*>(&bytes_[offset]),
+      end - offset
+    };
+  }
+
   // Insert a string into the symbol table, return its offset.
   uint32_t insert(std::string_view s) {
     auto startOffset = static_cast<uint32_t>(bytes_.size());

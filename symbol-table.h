@@ -21,8 +21,20 @@ class ElfSymbolTable {
     syms_.emplace_back(std::forward<T>(sym));
   }
 
+  const Elf64_Sym& operator[](size_t idx) const {
+    return syms_[idx];
+  }
+
+  constexpr size_t size() const {
+    return syms_.size();
+  }
+
+  constexpr std::span<const Elf64_Sym> syms() const {
+    return std::span{syms_};
+  }
+
   constexpr std::span<const std::byte> bytes() const {
-    return std::as_bytes(std::span{syms_});
+    return std::as_bytes(syms());
   }
 
  private:
